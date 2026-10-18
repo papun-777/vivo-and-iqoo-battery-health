@@ -1,0 +1,634 @@
+Here is a complete, single-file web application for designing parametric 3D-printable lampshades. It uses Three.js for real-time 3D procedural geometry generation and includes a built-in Binary STL Exporter so you can take your designs straight to your slicer (Cura, PrusaSlicer, Bambu Studio, etc.).
+How to Run the App
+ * Save the code below as lampshade-studio.html on your computer.
+ * Double-click the file to open it in any modern web browser (no local server or installation required).
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parametric 3D Lampshade Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    body { margin: 0; overflow: hidden; background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    input[type="range"] { accent-color: #f59e0b; }
+  </style>
+</head>
+<body class="flex h-screen w-screen">
+
+  <!-- Left Control Panel -->
+  <aside class="w-96 bg-slate-900/95 border-r border-slate-800 flex flex-col h-full z-10 backdrop-blur-md">
+    <div class="p-5 border-b border-slate-800 flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-bold text-amber-400 tracking-wide">Lampshade Studio</h1>
+        <p class="text-xs text-slate-400">Parametric 3D Print Generator</p>
+      </div>
+      <span class="px-2.5 py-1 text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full">mm units</span>
+    </div>
+
+    <!-- Scrollable Parameters -->
+    <div class="flex-1 overflow-y-auto p-5 space-y-6 text-sm">
+
+      <!-- Presets -->
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Quick Presets</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button onclick="applyPreset('ribbed')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-medium border border-slate-700 transition">Ribbed Drum</button>
+          <button onclick="applyPreset('twisted')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-medium border border-slate-700 transition">Twisted Lotus</button>
+          <button onclick="applyPreset('origami')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-medium border border-slate-700 transition">Faceted Wave</button>
+        </div>
+      </div>
+
+      <!-- 1. Base Dimensions -->
+      <div class="space-y-3 border-t border-slate-800 pt-4">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-amber-400/90">1. Overall Dimensions</h2>
+        
+        <div>
+          <div class="flex justify-between mb-1"><label>Height</label><span id="val-height" class="text-amber-400 font-mono">180 mm</span></div>
+          <input type="range" id="height" min="60" max="350" step="1" value="180" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Bottom Radius</label><span id="val-bottomRadius" class="text-amber-400 font-mono">70 mm</span></div>
+          <input type="range" id="bottomRadius" min="25" max="150" step="1" value="70" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Top Radius</label><span id="val-topRadius" class="text-amber-400 font-mono">45 mm</span></div>
+          <input type="range" id="topRadius" min="20" max="150" step="1" value="45" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Wall Thickness</label><span id="val-wallThickness" class="text-amber-400 font-mono">2.4 mm</span></div>
+          <input type="range" id="wallThickness" min="0.8" max="6.0" step="0.2" value="2.4" class="w-full">
+        </div>
+      </div>
+
+      <!-- 2. Silhouette & Profile -->
+      <div class="space-y-3 border-t border-slate-800 pt-4">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-amber-400/90">2. Vertical Profile</h2>
+        <div>
+          <label class="block mb-1 text-xs text-slate-400">Curve Type</label>
+          <select id="profileType" class="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-amber-400">
+            <option value="bulge">Parabolic Bulge / Pinch</option>
+            <option value="scallop">Sine Wave Contour</option>
+            <option value="hour">S-Curve (Inflection)</option>
+          </select>
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Profile Curve</label><span id="val-profileAmp" class="text-amber-400 font-mono">15 mm</span></div>
+          <input type="range" id="profileAmp" min="-40" max="50" step="1" value="15" class="w-full">
+        </div>
+      </div>
+
+      <!-- 3. Surface Pattern & Twist -->
+      <div class="space-y-3 border-t border-slate-800 pt-4">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-amber-400/90">3. Surface Pattern & Twist</h2>
+        <div>
+          <div class="flex justify-between mb-1"><label>Radial Ribs (Count)</label><span id="val-ribCount" class="text-amber-400 font-mono">24</span></div>
+          <input type="range" id="ribCount" min="0" max="80" step="1" value="24" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Rib Depth</label><span id="val-ribDepth" class="text-amber-400 font-mono">6.0 mm</span></div>
+          <input type="range" id="ribDepth" min="0" max="25" step="0.5" value="6.0" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Rib Sharpness</label><span id="val-ribSharpness" class="text-amber-400 font-mono">1.0</span></div>
+          <input type="range" id="ribSharpness" min="0.5" max="3.0" step="0.1" value="1.0" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Twist Angle</label><span id="val-twistAngle" class="text-amber-400 font-mono">90°</span></div>
+          <input type="range" id="twistAngle" min="-360" max="360" step="5" value="90" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Vertical Ripple Waves</label><span id="val-vWaveFreq" class="text-amber-400 font-mono">0</span></div>
+          <input type="range" id="vWaveFreq" min="0" max="16" step="1" value="0" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Vertical Ripple Depth</label><span id="val-vWaveAmp" class="text-amber-400 font-mono">0.0 mm</span></div>
+          <input type="range" id="vWaveAmp" min="0" max="15" step="0.5" value="0" class="w-full">
+        </div>
+      </div>
+
+      <!-- 4. Socket Fitter Mount -->
+      <div class="space-y-3 border-t border-slate-800 pt-4">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-amber-400/90">4. Bulb Socket Mount (Fitter)</h2>
+        <div>
+          <label class="block mb-1 text-xs text-slate-400">Mount Position</label>
+          <select id="fitterPos" class="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-amber-400">
+            <option value="bottom">Bottom Base (Table Lamp)</option>
+            <option value="top">Top Rim (Pendant / Hanging)</option>
+            <option value="none">No Fitter (Vase Mode / Open Cylinder)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block mb-1 text-xs text-slate-400">Standard Socket Size</label>
+          <select id="socketPreset" class="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-amber-400">
+            <option value="41">E27 / E26 Standard (41 mm hole)</option>
+            <option value="29">E14 Small European (29 mm hole)</option>
+            <option value="35">IKEA / US Uno Thread (35 mm hole)</option>
+            <option value="10">10mm Threaded Rod / Pendant Cord</option>
+          </select>
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Custom Hole Diameter</label><span id="val-holeDia" class="text-amber-400 font-mono">41 mm</span></div>
+          <input type="range" id="holeDia" min="8" max="80" step="0.5" value="41" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Support Spokes</label><span id="val-spokeCount" class="text-amber-400 font-mono">3</span></div>
+          <input type="range" id="spokeCount" min="2" max="6" step="1" value="3" class="w-full">
+        </div>
+      </div>
+
+      <!-- 5. Mesh Resolution -->
+      <div class="space-y-3 border-t border-slate-800 pt-4">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-amber-400/90">5. Print Mesh Quality</h2>
+        <div>
+          <div class="flex justify-between mb-1"><label>Radial Segments</label><span id="val-radSeg" class="text-amber-400 font-mono">180</span></div>
+          <input type="range" id="radSeg" min="12" max="360" step="4" value="180" class="w-full">
+        </div>
+        <div>
+          <div class="flex justify-between mb-1"><label>Height Layers</label><span id="val-heightSeg" class="text-amber-400 font-mono">120</span></div>
+          <input type="range" id="heightSeg" min="20" max="240" step="10" value="120" class="w-full">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Action Bar -->
+    <div class="p-4 border-t border-slate-800 bg-slate-900 space-y-3">
+      <div class="flex items-center justify-between text-xs text-slate-300">
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="lampPreview" checked class="rounded accent-amber-500">
+          <span>Warm Bulb Glow Preview</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="wireframeToggle" class="rounded accent-amber-500">
+          <span>Wireframe</span>
+        </label>
+      </div>
+      <button id="exportBtn" class="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shadow-lg shadow-amber-500/10 transition flex items-center justify-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+        Download 3D Printable .STL
+      </button>
+    </div>
+  </aside>
+
+  <!-- 3D Viewport -->
+  <main class="flex-1 relative" id="viewport">
+    <div class="absolute top-4 right-4 bg-slate-900/80 backdrop-blur border border-slate-800 rounded-lg px-4 py-2.5 text-xs text-slate-300 pointer-events-none space-y-1">
+      <div id="stats-dims" class="font-mono text-amber-400">Size: 140 × 140 × 180 mm</div>
+      <div id="stats-tris" class="text-slate-400">Triangles: 0</div>
+      <div class="text-slate-500 pt-1">Left Click: Orbit • Right Click: Pan • Scroll: Zoom</div>
+    </div>
+  </main>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+    import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+    // --- Scene & Renderer Setup ---
+    const container = document.getElementById('viewport');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0f19);
+
+    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 2000);
+    camera.position.set(0, 160, 360);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 90, 0);
+    controls.enableDamping = true;
+    controls.update();
+
+    // --- Build Plate Reference Grid (250x250mm standard bed) ---
+    const grid = new THREE.GridHelper(250, 25, 0xf59e0b, 0x1e293b);
+    scene.add(grid);
+
+    // --- Lighting ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    dirLight.position.set(150, 300, 200);
+    scene.add(dirLight);
+
+    // Internal Warm Bulb Light
+    const bulbLight = new THREE.PointLight(0xff9933, 3.5, 450, 1.2);
+    bulbLight.position.set(0, 85, 0);
+    scene.add(bulbLight);
+
+    const bulbGeo = new THREE.SphereGeometry(18, 24, 24);
+    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffddaa });
+    const bulbMesh = new THREE.Mesh(bulbGeo, bulbMat);
+    bulbMesh.position.copy(bulbLight.position);
+    scene.add(bulbMesh);
+
+    // --- Lampshade Material ---
+    const shadeMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xfffaf0,
+      emissive: 0xff7711,
+      emissiveIntensity: 0.18,
+      roughness: 0.35,
+      metalness: 0.0,
+      transmission: 0.35,
+      thickness: 2.5,
+      side: THREE.DoubleSide
+    });
+
+    let shadeMesh = null;
+
+    // --- Radius Evaluation Function ---
+    function getOuterRadius(v, theta, p) {
+      // Base linear interpolation
+      let r = p.bottomRadius * (1 - v) + p.topRadius * v;
+
+      // Vertical profile curve
+      if (p.profileType === 'bulge') {
+        r += p.profileAmp * 4 * v * (1 - v);
+      } else if (p.profileType === 'scallop') {
+        r += p.profileAmp * Math.sin(v * Math.PI * 2);
+      } else if (p.profileType === 'hour') {
+        r += p.profileAmp * Math.sin(v * Math.PI * 2) * (1 - v * 0.5);
+      }
+
+      // Twist angle along height
+      const twistRad = (p.twistAngle * Math.PI / 180) * v;
+      const angle = theta + twistRad;
+
+      // Radial ribs with adjustable sharpness
+      let ribOffset = 0;
+      if (p.ribCount > 0 && p.ribDepth > 0) {
+        const rawWave = Math.sin(p.ribCount * angle);
+        const shapedWave = Math.sign(rawWave) * Math.pow(Math.abs(rawWave), p.ribSharpness);
+        ribOffset = p.ribDepth * shapedWave;
+      }
+
+      // Vertical ripple wave cross-pattern
+      if (p.vWaveFreq > 0 && p.vWaveAmp > 0) {
+        const vWave = p.vWaveAmp * Math.sin(v * Math.PI * 2 * p.vWaveFreq + theta * 2);
+        ribOffset += vWave;
+      }
+
+      return Math.max(8, r + ribOffset);
+    }
+
+    // --- Build watertight tubular wall ---
+    function createShellGeometry(p) {
+      const M = p.radSeg;
+      const N = p.heightSeg;
+      const positions = [];
+      const indices = [];
+
+      // Ring 0..(N): Outer wall bottom-to-top
+      for (let i = 0; i <= N; i++) {
+        const v = i / N;
+        const y = v * p.height;
+        for (let j = 0; j < M; j++) {
+          const theta = (j / M) * Math.PI * 2;
+          const rOut = getOuterRadius(v, theta, p);
+          positions.push(rOut * Math.cos(theta), y, rOut * Math.sin(theta));
+        }
+      }
+
+      // Ring (N+1)..(2N+1): Inner wall bottom-to-top
+      for (let i = 0; i <= N; i++) {
+        const v = i / N;
+        const y = v * p.height;
+        for (let j = 0; j < M; j++) {
+          const theta = (j / M) * Math.PI * 2;
+          const rOut = getOuterRadius(v, theta, p);
+          const rIn = Math.max(4, rOut - p.wallThickness);
+          positions.push(rIn * Math.cos(theta), y, rIn * Math.sin(theta));
+        }
+      }
+
+      const outerOffset = 0;
+      const innerOffset = (N + 1) * M;
+
+      function addQuad(a, b, c, d) {
+        indices.push(a, b, c);
+        indices.push(a, c, d);
+      }
+
+      // Outer Wall Faces
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < M; j++) {
+          const nextJ = (j + 1) % M;
+          const a = outerOffset + i * M + j;
+          const b = outerOffset + i * M + nextJ;
+          const c = outerOffset + (i + 1) * M + nextJ;
+          const d = outerOffset + (i + 1) * M + j;
+          addQuad(a, c, b, d); // Outward normal
+        }
+      }
+
+      // Inner Wall Faces
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < M; j++) {
+          const nextJ = (j + 1) % M;
+          const a = innerOffset + i * M + j;
+          const b = innerOffset + i * M + nextJ;
+          const c = innerOffset + (i + 1) * M + nextJ;
+          const d = innerOffset + (i + 1) * M + j;
+          addQuad(a, b, c, d); // Inward normal
+        }
+      }
+
+      // Bottom Rim Cap (connects Outer i=0 to Inner i=0)
+      for (let j = 0; j < M; j++) {
+        const nextJ = (j + 1) % M;
+        const outA = outerOffset + j;
+        const outB = outerOffset + nextJ;
+        const inB = innerOffset + nextJ;
+        const inA = innerOffset + j;
+        addQuad(outA, outB, inB, inA);
+      }
+
+      // Top Rim Cap (connects Outer i=N to Inner i=N)
+      for (let j = 0; j < M; j++) {
+        const nextJ = (j + 1) % M;
+        const outA = outerOffset + N * M + j;
+        const outB = outerOffset + N * M + nextJ;
+        const inB = innerOffset + N * M + nextJ;
+        const inA = innerOffset + N * M + j;
+        addQuad(outA, inA, inB, outB);
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      const nonIndexed = geo.toNonIndexed();
+      nonIndexed.computeVertexNormals();
+      return nonIndexed;
+    }
+
+    // --- Helper to build closed ring (hollow cylinder) ---
+    function createClosedRing(rInner, rOuter, height, yCenter, segs = 72) {
+      const positions = [];
+      const indices = [];
+      const yBot = yCenter - height / 2;
+      const yTop = yCenter + height / 2;
+
+      // 0: Outer Bot, 1: Outer Top, 2: Inner Bot, 3: Inner Top
+      for (let ring = 0; ring < 4; ring++) {
+        const r = ring < 2 ? rOuter : rInner;
+        const y = (ring % 2 === 0) ? yBot : yTop;
+        for (let j = 0; j < segs; j++) {
+          const theta = (j / segs) * Math.PI * 2;
+          positions.push(r * Math.cos(theta), y, r * Math.sin(theta));
+        }
+      }
+
+      function addQuad(a, b, c, d) {
+        indices.push(a, b, c, a, c, d);
+      }
+
+      for (let j = 0; j < segs; j++) {
+        const nextJ = (j + 1) % segs;
+        // Outer wall
+        addQuad(j, segs + nextJ, nextJ, segs + j);
+        // Inner wall
+        addQuad(2 * segs + j, 2 * segs + nextJ, 3 * segs + nextJ, 3 * segs + j);
+        // Bottom face
+        addQuad(j, nextJ, 2 * segs + nextJ, 2 * segs + j);
+        // Top face
+        addQuad(segs + j, 3 * segs + j, 3 * segs + nextJ, segs + nextJ);
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      const nonIndexed = geo.toNonIndexed();
+      nonIndexed.computeVertexNormals();
+      return nonIndexed;
+    }
+
+    // --- Build Socket Fitter Assembly ---
+    function createFitterGeometries(p) {
+      if (p.fitterPos === 'none') return [];
+
+      const parts = [];
+      const isTop = p.fitterPos === 'top';
+      const vAnchor = isTop ? 1.0 : 0.0;
+      const fitterThickness = 4.0;
+      const yCenter = isTop ? (p.height - fitterThickness / 2) : (fitterThickness / 2);
+
+      const holeRadius = p.holeDia / 2;
+      const hubOuterRadius = holeRadius + 5.5;
+
+      // Calculate minimum inner radius at the anchor rim so the outer ring merges cleanly
+      let minR = Infinity;
+      for (let j = 0; j < 72; j++) {
+        const theta = (j / 72) * Math.PI * 2;
+        const r = getOuterRadius(vAnchor, theta, p) - p.wallThickness;
+        if (r < minR) minR = r;
+      }
+
+      if (minR <= hubOuterRadius + 2) return []; // Shade too narrow for socket
+
+      // 1. Center Hub Ring
+      parts.push(createClosedRing(holeRadius, hubOuterRadius, fitterThickness, yCenter, 72));
+
+      // 2. Inner Wall Ledge Ring (bonds spokes to irregular/ribbed shade wall)
+      const ledgeInner = minR - 2.5;
+      const ledgeOuter = minR + p.wallThickness * 0.65;
+      parts.push(createClosedRing(ledgeInner, ledgeOuter, fitterThickness, yCenter, 96));
+
+      // 3. Radial Spokes
+      const spokeLength = (ledgeInner - hubOuterRadius) + 3.0;
+      const spokeMidR = hubOuterRadius + (ledgeInner - hubOuterRadius) / 2;
+      const spokeWidth = 6.5;
+
+      for (let s = 0; s < p.spokeCount; s++) {
+        const angle = (s / p.spokeCount) * Math.PI * 2;
+        const boxGeo = new THREE.BoxGeometry(spokeLength, fitterThickness, spokeWidth);
+        boxGeo.translate(spokeMidR, yCenter, 0);
+        boxGeo.rotateY(angle);
+        parts.push(boxGeo.toNonIndexed());
+      }
+
+      return parts;
+    }
+
+    // --- Read UI Parameters & Rebuild Mesh ---
+    function getParams() {
+      return {
+        height: parseFloat(document.getElementById('height').value),
+        bottomRadius: parseFloat(document.getElementById('bottomRadius').value),
+        topRadius: parseFloat(document.getElementById('topRadius').value),
+        wallThickness: parseFloat(document.getElementById('wallThickness').value),
+        profileType: document.getElementById('profileType').value,
+        profileAmp: parseFloat(document.getElementById('profileAmp').value),
+        ribCount: parseInt(document.getElementById('ribCount').value),
+        ribDepth: parseFloat(document.getElementById('ribDepth').value),
+        ribSharpness: parseFloat(document.getElementById('ribSharpness').value),
+        twistAngle: parseFloat(document.getElementById('twistAngle').value),
+        vWaveFreq: parseInt(document.getElementById('vWaveFreq').value),
+        vWaveAmp: parseFloat(document.getElementById('vWaveAmp').value),
+        fitterPos: document.getElementById('fitterPos').value,
+        holeDia: parseFloat(document.getElementById('holeDia').value),
+        spokeCount: parseInt(document.getElementById('spokeCount').value),
+        radSeg: parseInt(document.getElementById('radSeg').value),
+        heightSeg: parseInt(document.getElementById('heightSeg').value)
+      };
+    }
+
+    function updateLabels(p) {
+      document.getElementById('val-height').textContent = `${p.height} mm`;
+      document.getElementById('val-bottomRadius').textContent = `${p.bottomRadius} mm`;
+      document.getElementById('val-topRadius').textContent = `${p.topRadius} mm`;
+      document.getElementById('val-wallThickness').textContent = `${p.wallThickness.toFixed(1)} mm`;
+      document.getElementById('val-profileAmp').textContent = `${p.profileAmp} mm`;
+      document.getElementById('val-ribCount').textContent = `${p.ribCount}`;
+      document.getElementById('val-ribDepth').textContent = `${p.ribDepth.toFixed(1)} mm`;
+      document.getElementById('val-ribSharpness').textContent = `${p.ribSharpness.toFixed(1)}`;
+      document.getElementById('val-twistAngle').textContent = `${p.twistAngle}°`;
+      document.getElementById('val-vWaveFreq').textContent = `${p.vWaveFreq}`;
+      document.getElementById('val-vWaveAmp').textContent = `${p.vWaveAmp.toFixed(1)} mm`;
+      document.getElementById('val-holeDia').textContent = `${p.holeDia} mm`;
+      document.getElementById('val-spokeCount').textContent = `${p.spokeCount}`;
+      document.getElementById('val-radSeg').textContent = `${p.radSeg}`;
+      document.getElementById('val-heightSeg').textContent = `${p.heightSeg}`;
+    }
+
+    function rebuildLampshade() {
+      const p = getParams();
+      updateLabels(p);
+
+      if (shadeMesh) {
+        scene.remove(shadeMesh);
+        shadeMesh.geometry.dispose();
+      }
+
+      const geometries = [createShellGeometry(p), ...createFitterGeometries(p)];
+      const mergedGeometry = BufferGeometryUtils.mergeGeometries(geometries, false);
+
+      shadeMesh = new THREE.Mesh(mergedGeometry, shadeMaterial);
+      scene.add(shadeMesh);
+
+      // Center bulb light inside current height
+      bulbLight.position.set(0, p.height * 0.48, 0);
+      bulbMesh.position.copy(bulbLight.position);
+
+      // Update viewport stats
+      mergedGeometry.computeBoundingBox();
+      const bb = mergedGeometry.boundingBox;
+      const sx = Math.round(bb.max.x - bb.min.x);
+      const sy = Math.round(bb.max.y - bb.min.y);
+      const sz = Math.round(bb.max.z - bb.min.z);
+      const triCount = mergedGeometry.attributes.position.count / 3;
+
+      document.getElementById('stats-dims').textContent = `Bounding Box: ${sx} × ${sz} × ${sy} mm`;
+      document.getElementById('stats-tris').textContent = `Triangles: ${triCount.toLocaleString()}`;
+    }
+
+    // --- Event Listeners ---
+    document.querySelectorAll('input, select').forEach(el => {
+      if (el.id === 'socketPreset') {
+        el.addEventListener('change', (e) => {
+          document.getElementById('holeDia').value = e.target.value;
+          rebuildLampshade();
+        });
+      } else if (el.id === 'lampPreview') {
+        el.addEventListener('change', (e) => {
+          const on = e.target.checked;
+          bulbLight.visible = on;
+          bulbMesh.visible = on;
+          shadeMaterial.emissiveIntensity = on ? 0.18 : 0.0;
+        });
+      } else if (el.id === 'wireframeToggle') {
+        el.addEventListener('change', (e) => {
+          shadeMaterial.wireframe = e.target.checked;
+        });
+      } else {
+        el.addEventListener('input', rebuildLampshade);
+      }
+    });
+
+    // --- Presets ---
+    window.applyPreset = function(name) {
+      const setVal = (id, val) => { document.getElementById(id).value = val; };
+      if (name === 'ribbed') {
+        setVal('height', 190); setVal('bottomRadius', 75); setVal('topRadius', 55);
+        setVal('profileType', 'bulge'); setVal('profileAmp', 12);
+        setVal('ribCount', 36); setVal('ribDepth', 4.5); setVal('ribSharpness', 0.8);
+        setVal('twistAngle', 0); setVal('vWaveFreq', 0); setVal('vWaveAmp', 0);
+      } else if (name === 'twisted') {
+        setVal('height', 210); setVal('bottomRadius', 65); setVal('topRadius', 40);
+        setVal('profileType', 'bulge'); setVal('profileAmp', 28);
+        setVal('ribCount', 18); setVal('ribDepth', 9.0); setVal('ribSharpness', 1.6);
+        setVal('twistAngle', 135); setVal('vWaveFreq', 0); setVal('vWaveAmp', 0);
+      } else if (name === 'origami') {
+        setVal('height', 175); setVal('bottomRadius', 70); setVal('topRadius', 50);
+        setVal('profileType', 'hour'); setVal('profileAmp', 16);
+        setVal('ribCount', 16); setVal('ribDepth', 7.5); setVal('ribSharpness', 2.4);
+        setVal('twistAngle', 60); setVal('vWaveFreq', 6); setVal('vWaveAmp', 4.5);
+      }
+      rebuildLampshade();
+    };
+
+    // --- STL Export (Z-Up Slicer Orientation) ---
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      if (!shadeMesh) return;
+      const exporter = new STLExporter();
+
+      // Clone and rotate +90deg around X so Y-up becomes Z-up for 3D slicers
+      const exportGeo = shadeMesh.geometry.clone();
+      exportGeo.rotateX(Math.PI / 2);
+      const exportMesh = new THREE.Mesh(exportGeo);
+
+      const stlBuffer = exporter.parse(exportMesh, { binary: true });
+      const blob = new Blob([stlBuffer], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lampshade_${Date.now()}.stl`;
+      link.click();
+
+      URL.revokeObjectURL(url);
+      exportGeo.dispose();
+    });
+
+    // --- Window Resize & Render Loop ---
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    rebuildLampshade();
+    animate();
+  </script>
+</body>
+</html>
+
+Key Features Included for 3D Printing
+ * True Millimeter Scale & Slicer-Ready Orientation: All sliders operate directly in millimeters (mm) on a visual 250 × 250 mm reference build plate. Exporting automatically rotates the geometry to Z-up so it lands flat on your slicer's build plate.
+ * Built-In Socket Fitter Generator: Choose between E27/E26 (41 mm), E14 (29 mm), Uno (35 mm), or custom pendant cord holes. The app generates an internal collar ring that welds to the inner ribs so there are no gaps regardless of your wave depth.
+ * Watertight Manifold Shell: Generates an explicit outer wall, inner wall, top rim, and bottom rim, OR lets you disable the fitter and print in Spiral Vase Mode.
+Quick Slicer & Filament Tips
+ * Bulb Safety: Always use LED bulbs with 3D-printed lampshades. Standard PLA begins softening around 55–60°C; if your bulb runs warm or sits close to the hub ring, print the shade in PETG or ASA.
+ * Eliminating Visible Seams: Set your slicer's Seam Position to Aligned or Sharpest Corner so the Z-seam hides neatly inside one of the vertical valleys of the ribs.
